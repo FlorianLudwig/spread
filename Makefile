@@ -9,6 +9,8 @@ ifndef SPREAD_VERSION
 	SPREAD_VERSION := v0.0.0
 endif
 
+LIBGIT2_VERSION ?= v0.23.4
+
 GOX_OS ?= linux darwin windows
 GOX_ARCH ?= amd64
 
@@ -22,7 +24,7 @@ VERSION_LDFLAG := -X main.Version=$(SPREAD_VERSION)
 
 GOFILES := find . -name '*.go' -not -path "./vendor/*"
 
-GOBUILD_LDFLAGS ?= $(VERSION_LDFLAG)
+GOBUILD_LDFLAGS ?= '"$(VERSION_LDFLAG)"'
 GOBUILD_FLAGS ?= -i -v
 GOTEST_FLAGS ?= -v
 GOX_FLAGS ?= -output="build/{{.Dir}}_{{.OS}}_{{.Arch}}" -os="${GOX_OS}" -arch="${GOX_ARCH}"
@@ -30,6 +32,7 @@ GOX_FLAGS ?= -output="build/{{.Dir}}_{{.OS}}_{{.Arch}}" -os="${GOX_OS}" -arch="$
 STATIC_LDFLAGS ?= -extldflags "-static" --s -w
 
 GITLAB_CONTEXT ?= ./build/gitlab
+LIBGIT2_URL ?= https://github.com/libgit2/libgit2/archive/$(LIBGIT2_VERSION).tar.gz
 
 # image data
 ORG ?= redspreadapps
@@ -68,6 +71,9 @@ build: build/spread
 build/spread:
 	$(GO) build $(GOBUILD_FLAGS) -ldflags "$(GOBUILD_LDFLAGS)" -o $@ $(EXEC_PKG)
 
+build/spread-static:
+	./hack/with-static.sh $(GO) build $(GOBUILD_FLAGS) -ldflags $(GOBUILD_LDFLAGS) -o $@ $(EXEC_PKG) 
+
 build/spread-linux-static:
 	GOOS=linux $(GO) build -o $@ $(GOBUILD_FLAGS) -ldflags "$(GOBUILD_LDFLAGS) $(STATIC_LDFLAGS)" $(EXEC_PKG)
 	chmod +x $@
@@ -82,6 +88,17 @@ build-gitlab: build/spread-linux-static
 	cp -r ./images/gitlabci $(GITLAB_CONTEXT)
 	cp ./build/spread-linux-static $(GITLAB_CONTEXT)
 	$(DOCKER) build $(DOCKER_OPTS) -t $(GITLAB_IMAGE_NAME) $(GITLAB_CONTEXT)
+
+build-libgit2: vendor/libgit2/build/libgit2.a
+	./hack/with-static.sh go install gopkg.in/libgit2/git2go.v23
+vendor/libgit2/build/libgit2.a: vendor/libgit2
+	./hack/build-libgit2.sh
+
+vendor/libgit2: vendor/libgit2.tar.gz
+	mkdir -p $@
+	tar -zxf $< -C $@ --strip-components=1
+vendor/libgit2.tar.gz:
+	curl -L -o $@ $(LIBGIT2_URL)
 
 .PHONY: vet
 vet:
